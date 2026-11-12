@@ -80,6 +80,13 @@ h1{padding:0 44px}
 @media (prefers-reduced-motion:reduce){.bar{animation:none;height:var(--h)}.pp{animation:none;opacity:1}}
 #snh{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:25;background:linear-gradient(#ffd75e,#f0a800);color:#2a1c00;box-shadow:0 3px 0 #8a5d00,0 0 20px rgba(0,0,0,.5)}
 #snh[hidden]{display:none}
+.drumv{aspect-ratio:1}
+#zb,#fb{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);width:38px;height:38px;border-radius:50%;padding:0;display:grid;place-items:center;background:rgba(255,255,255,.08);border:1px solid var(--line);box-shadow:none;opacity:.55;transition:opacity .2s;z-index:20}
+#fb{right:58px}#zb{right:104px}
+#zb[aria-pressed=true]{border-color:var(--gold);color:var(--gold)}
+#zb:hover,#fb:hover,#zb:focus-visible,#fb:focus-visible{opacity:1}
+h1{padding:0 clamp(44px,12vw,150px)}
+@media (max-width:600px){h1{padding-top:44px}}
 .drumv{width:min(340px,70vw);margin:10px auto 4px;border-radius:22px;overflow:hidden;box-shadow:0 0 0 3px var(--cyan),0 0 36px rgba(39,216,255,.5)}
 .drumv video{width:100%;display:block}
 .dr{animation:thump .35s ease-in-out infinite alternate}
@@ -260,7 +267,8 @@ function paintFinal(){
 const hitSet=L=>[...finalP.text].some(c=>isL(c)&&base(c)===L);
 
 // ---------- Ecrãs ----------
-function render(){
+function render(){renderInner();fit()}
+function renderInner(){
   document.title=title;
   let h=`<h1>${esc(title)}</h1>`;
   if(mode==="play"){const p=phrases[idx],t=curTeam();
@@ -426,6 +434,31 @@ document.addEventListener("keydown",e=>{
   if(mode!=="play")return;
   if(e.code==="Space"){e.preventDefault();toggle()}
   else if(e.key==="n"||e.key==="N")next()});
+
+// ---------- Ecrã inteiro e ajuste ao ecrã ----------
+let fitOn=true;try{fitOn=localStorage.getItem("bni_fit")!=="0"}catch(e){}
+function fit(){
+  if(!fitOn||mode==="edit"){app.style.zoom="";return}
+  app.style.zoom="1";
+  const h=app.scrollHeight,z=Math.max(.35,Math.min(1,window.innerHeight/h));
+  app.style.zoom=z>=1?"":String(z)}
+const ICON=p=>`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+const IC_FIT=ICON('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>');
+const IC_FS=ICON('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>');
+const IC_FSX=ICON('<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>');
+const zb=document.createElement("button");zb.id="zb";zb.type="button";zb.innerHTML=IC_FIT;
+const setZb=()=>{zb.setAttribute("aria-pressed",fitOn);zb.title=zb.ariaLabel=fitOn?"Ajustar ao ecrã: ligado (clica para desligar)":"Ajustar ao ecrã: desligado (clica para ligar)"};
+setZb();zb.onclick=()=>{fitOn=!fitOn;try{localStorage.setItem("bni_fit",fitOn?"1":"0")}catch(e){}setZb();fit()};
+document.body.append(zb);
+const de=document.documentElement,reqFS=de.requestFullscreen||de.webkitRequestFullscreen;
+const isFS=()=>!!(document.fullscreenElement||document.webkitFullscreenElement);
+if(reqFS){
+  const fb=document.createElement("button");fb.id="fb";fb.type="button";
+  const setFb=()=>{fb.innerHTML=isFS()?IC_FSX:IC_FS;fb.title=fb.ariaLabel=isFS()?"Sair do ecrã inteiro":"Ecrã inteiro";setTimeout(fit,150)};
+  fb.onclick=()=>{try{if(isFS())(document.exitFullscreen||document.webkitExitFullscreen).call(document);else reqFS.call(de)}catch(e){}};
+  document.addEventListener("fullscreenchange",setFb);document.addEventListener("webkitfullscreenchange",setFb);
+  setFb();document.body.append(fb)}
+let rz=null;window.addEventListener("resize",()=>{clearTimeout(rz);rz=setTimeout(fit,100)});
 render();
 })();
 </script>
