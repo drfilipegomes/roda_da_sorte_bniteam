@@ -81,6 +81,15 @@ h1{padding:0 44px}
 #snh{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:25;background:linear-gradient(#ffd75e,#f0a800);color:#2a1c00;box-shadow:0 3px 0 #8a5d00,0 0 20px rgba(0,0,0,.5)}
 #snh[hidden]{display:none}
 .drumv{aspect-ratio:1}
+.fgrid{display:grid;grid-template-columns:minmax(0,1fr) clamp(140px,20vw,210px);gap:14px;align-items:stretch}
+.dent{display:flex;flex-direction:column;align-items:center;justify-content:center;border:3px solid var(--cyan);border-radius:32px;background:rgba(2,10,28,.8);padding:10px;box-shadow:0 0 30px rgba(39,216,255,.3)}
+.dent svg{width:100%;max-height:300px}
+.dent .pt{opacity:.14;transition:opacity .3s}.dent .pt.on{opacity:1;animation:pop .5s ease-out}
+.dent.lose{border-color:#ff4d4d;box-shadow:0 0 36px rgba(255,77,77,.6)}
+.dm{font-family:var(--disp);font-weight:800;font-size:1.2rem;color:var(--gold)}
+.c.m{color:#d62828}
+@media (max-width:700px){.fgrid{grid-template-columns:1fr}.dent svg{max-height:170px}}
+
 #zb,#fb{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);width:38px;height:38px;border-radius:50%;padding:0;display:grid;place-items:center;background:rgba(255,255,255,.08);border:1px solid var(--line);box-shadow:none;opacity:.55;transition:opacity .2s;z-index:20}
 #fb{right:58px}#zb{right:104px}
 #zb[aria-pressed=true]{border-color:var(--gold);color:var(--gold)}
@@ -109,7 +118,7 @@ h1{padding:0 clamp(44px,12vw,150px)}
       <li>Se estiver errada, o jogo <b>continua</b> e as letras voltam a aparecer. Se ninguém acertar, a frase aparece completa, sem pontos.</li>
       <li>Depois de todas as frases, a equipa com <b>mais pontos</b> vai à <b>Grande Final</b>.</li>
       <li>Na final, a frase está <b>toda escondida</b>, como no jogo da forca. Cada jogador da equipa diz <b>uma letra à vez</b> e o anfitrião escolhe-a: todas as vezes que aparece na frase ficam reveladas.</li>
-      <li>Quando a equipa souber a frase, diz em voz alta. Se acertar, <b>vence o Desafio!</b></li>
+      <li>Cada <b>letra errada</b> acrescenta uma parte ao <b>dentista</b>. Se a equipa descobrir a frase antes de o dentista ficar completo (o número de erros permitidos é definido pelo anfitrião, 8 por defeito), <b>vence o Desafio!</b> Se o dentista ficar completo, perde.</li>
     </ol>
     <p class="mut" style="text-align:left">Atalhos do anfitrião: <b>Espaço</b> = pausar ou continuar · <b>N</b> = próxima frase · na final, <b>escrever uma letra</b> no teclado escolhe-a.</p>
     <div class="row"><button type="button" id="rx">Fechar</button></div>
@@ -142,12 +151,13 @@ const defaultFinal={theme:"Grande Final",text:"Obrigado pela atenção! O TEAM �
 
 let title="A Roda da Sorte — Desafio BNI",teams=["Equipa 1","Equipa 2","Equipa 3"],pts=10,speed=1000,
     phrases=defaultPhrases.map(q=>({...q})),finalP={...defaultFinal};
-let drumPhase=0,drumT=null,drumMaster=null,gain=0,shared=false,saveOK=true,editIdx=-1,mode="edit",idx=0,order=[],n=0,paused=false,timer=null,
+let maxErr=8,finalOutcome="",drumPhase=0,drumT=null,drumMaster=null,gain=0,shared=false,saveOK=true,editIdx=-1,mode="edit",idx=0,order=[],n=0,paused=false,timer=null,
     done=false,solved=false,scores=[],finalist=-1,used=new Set(),lastPick=null,kbKeys=[],snd=2;
 
 function apply(o){
   if(o.t)title=String(o.t).slice(0,60);
   if([1000,2000,3000].includes(+o.s))speed=+o.s;
+  if(+o.err>=3)maxErr=Math.min(15,Math.floor(+o.err));
   if(+o.pts>0)pts=Math.min(1000,Math.floor(+o.pts));
   if(Array.isArray(o.teams)&&o.teams.length>=2)teams=o.teams.slice(0,6).map((t,i)=>String(t).slice(0,30)||("Equipa "+(i+1)));
   if(Array.isArray(o.p)&&o.p.length)phrases=o.p.slice(0,200).filter(q=>q&&q.theme&&q.text).map(q=>({theme:String(q.theme).slice(0,80),text:String(q.text).slice(0,200)}));
@@ -155,25 +165,25 @@ function apply(o){
 }
 try{const raw=localStorage.getItem("bni_v1");if(raw)apply(JSON.parse(raw))}catch(e){saveOK=false}
 
-function encodeShare(){const j=JSON.stringify({t:title,s:speed,pts,teams,p:phrases.map(q=>[q.theme,q.text]),f:[finalP.theme,finalP.text]});return "g2."+btoa(unescape(encodeURIComponent(j))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}
+function encodeShare(){const j=JSON.stringify({t:title,s:speed,pts,err:maxErr,teams,p:phrases.map(q=>[q.theme,q.text]),f:[finalP.theme,finalP.text]});return "g2."+btoa(unescape(encodeURIComponent(j))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}
 function decodeShare(d){try{d=d.replace(/-/g,"+").replace(/_/g,"/");while(d.length%4)d+="=";const o=JSON.parse(decodeURIComponent(escape(atob(d))));
-  return{t:o.t,s:o.s,pts:o.pts,teams:o.teams,p:(o.p||[]).filter(a=>Array.isArray(a)).map(a=>({theme:a[0],text:a[1]})),f:o.f?{theme:o.f[0],text:o.f[1]}:null}}catch(e){return null}}
+  return{t:o.t,s:o.s,pts:o.pts,err:o.err,teams:o.teams,p:(o.p||[]).filter(a=>Array.isArray(a)).map(a=>({theme:a[0],text:a[1]})),f:o.f?{theme:o.f[0],text:o.f[1]}:null}}catch(e){return null}}
 try{if(location.hash.startsWith("#g2.")){const o=decodeShare(location.hash.slice(4));if(o){apply(o);shared=true}}}catch(e){}
 window.addEventListener("hashchange",()=>location.reload());
-const save=()=>{if(shared)return;try{localStorage.setItem("bni_v1",JSON.stringify({t:title,s:speed,pts,teams,p:phrases,f:finalP}))}catch(e){saveOK=false}};
+const save=()=>{if(shared)return;try{localStorage.setItem("bni_v1",JSON.stringify({t:title,s:speed,pts,err:maxErr,teams,p:phrases,f:finalP}))}catch(e){saveOK=false}};
 const shuffle=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
 const letters=t=>[...t].map((c,i)=>isL(c)?i:-1).filter(i=>i>=0);
 const curTeam=()=>idx%teams.length;
 
 // ---------- Painel de letras ----------
-function boardHTML(text,shown,flip,win){
+function boardHTML(text,shown,flip,win,mark){
   const words=[];let cur=[];
   [...text].forEach((ch,i)=>{if(/\s/.test(ch)){if(cur.length)words.push(cur);cur=[]}else cur.push([ch,i])});
   if(cur.length)words.push(cur);
-  const out=words.map(w=>`<div class="word">${w.map(([ch,i])=>!isL(ch)?`<div class="c p">${esc(ch)}</div>`:shown(i,ch)?`<div class="c${flip&&flip(i,ch)?" f":""}">${esc(ch.toUpperCase())}</div>`:'<div class="c h">.</div>').join("")}</div>`).join("");
+  const out=words.map(w=>`<div class="word">${w.map(([ch,i])=>!isL(ch)?`<div class="c p">${esc(ch)}</div>`:shown(i,ch)?`<div class="c${flip&&flip(i,ch)?" f":""}${mark&&mark(i,ch)?" m":""}">${esc(ch.toUpperCase())}</div>`:'<div class="c h">.</div>').join("")}</div>`).join("");
   return `<div class="board${win?" win":""}">${out}</div>`}
 const roundBoard=(full,win)=>{const s=new Set(order.slice(0,n));return boardHTML(phrases[idx].text,full?()=>true:i=>s.has(i),(i)=>n>0&&i===order[n-1],win)};
-const finalBoard=(full,win)=>boardHTML(finalP.text,full?()=>true:(i,ch)=>used.has(base(ch)),(i,ch)=>base(ch)===lastPick,win);
+const finalBoard=(full,win,lose)=>boardHTML(finalP.text,full?()=>true:(i,ch)=>used.has(base(ch)),(i,ch)=>base(ch)===lastPick,win,lose?(i,ch)=>!used.has(base(ch)):null);
 
 function teamsHTML(on,label,adj){
   return `<div class="teams" id="tms">${teams.map((t,i)=>`<div class="tm${on.includes(i)?" on":""}" style="--tc:${COLORS[i]}"><div class="tn">${esc(t)}</div><div class="tp">${scores[i]||0}</div><div class="ta">${on.includes(i)?label:"pontos"}</div>${adj?`<div class="adj"><button class="s" data-a="${i}" data-d="-1" aria-label="Tirar ${pts} pontos a ${esc(t)}">−</button><button class="s" data-a="${i}" data-d="1" aria-label="Dar ${pts} pontos a ${esc(t)}">+</button></div>`:""}</div>`).join("")}</div>`}
@@ -187,6 +197,16 @@ function podiumHTML(){
 function wireAdj(after){document.querySelectorAll(".adj button").forEach(b=>b.onclick=()=>{const i=+b.dataset.a;scores[i]=Math.max(0,(scores[i]||0)+pts*(+b.dataset.d));after()})}
 
 // ---------- Áudio ----------
+const DENTIST=`<svg viewBox="0 0 200 280" role="img" aria-label="Dentista que vai ficando completo a cada erro">
+<g class="pt" data-n="6"><rect x="76" y="186" width="20" height="72" rx="6" fill="#3a5a8c"/><rect x="68" y="254" width="32" height="13" rx="6" fill="#222"/></g>
+<g class="pt" data-n="7"><rect x="104" y="186" width="20" height="72" rx="6" fill="#3a5a8c"/><rect x="100" y="254" width="32" height="13" rx="6" fill="#222"/></g>
+<g class="pt" data-n="3"><rect x="66" y="88" width="68" height="106" rx="14" fill="#fff" stroke="#8fa6c2" stroke-width="3"/><path d="M88 88l12 22 12-22" fill="#cfe3f5" stroke="#8fa6c2" stroke-width="2"/></g>
+<g class="pt" data-n="4"><path d="M72 104L42 152" stroke="#8fa6c2" stroke-width="19" stroke-linecap="round"/><path d="M72 104L42 152" stroke="#fff" stroke-width="13" stroke-linecap="round"/><circle cx="39" cy="157" r="9" fill="#f2c9a0"/></g>
+<g class="pt" data-n="5"><path d="M128 104L158 152" stroke="#8fa6c2" stroke-width="19" stroke-linecap="round"/><path d="M128 104L158 152" stroke="#fff" stroke-width="13" stroke-linecap="round"/><circle cx="161" cy="157" r="9" fill="#f2c9a0"/></g>
+<g class="pt" data-n="1"><circle cx="100" cy="52" r="30" fill="#f2c9a0"/><path d="M70 48a30 30 0 0 1 60 0q-30-14-60 0z" fill="#5a3a1e"/><circle cx="90" cy="56" r="3" fill="#222"/><circle cx="110" cy="56" r="3" fill="#222"/></g>
+<g class="pt" data-n="2"><path d="M72 64q28 30 56 0v14q-28 26-56 0z" fill="#8fd3e8" stroke="#4aa3c2" stroke-width="2"/><circle cx="90" cy="55" r="9" fill="none" stroke="#222" stroke-width="2.5"/><circle cx="110" cy="55" r="9" fill="none" stroke="#222" stroke-width="2.5"/><path d="M99 55h2" stroke="#222" stroke-width="2.5"/></g>
+<g class="pt" data-n="8"><path d="M162 152L178 112" stroke="#999" stroke-width="4" stroke-linecap="round"/><circle cx="180" cy="106" r="11" fill="#dff3ff" stroke="#8fa6c2" stroke-width="3"/><path d="M92 122c-6 0-9 6-7 12 1 5 3 9 5 9s2-6 5-6 3 6 5 6 4-4 5-9c2-6-1-12-7-12-3 0-4 1-5 1s-3-1-6-1z" fill="#fff" stroke="#27d8ff" stroke-width="2"/></g>
+</svg>`;
 const sl=()=>["🔈 Som: desligado","🔊 Só efeitos","🎵 Música + efeitos"][snd];
 const bgMusic=new Audio(MUSIC_SRC);bgMusic.loop=true;bgMusic.volume=0.35;
 const applause=new Audio(APPLAUSE_SRC);
@@ -249,18 +269,25 @@ function paint(){
   document.getElementById("tms").outerHTML=teamsHTML([t],"▶ A jogar",true);wireAdj(paint)}
 
 // ---------- Fase 2: grande final ----------
-function startFinal(i){stopApplause();stopDrum();finalist=i;used=new Set();lastPick=null;done=solved=false;mode="final";render();manageBgMusic()}
+function startFinal(i){stopApplause();stopDrum();finalist=i;used=new Set();lastPick=null;done=solved=false;finalOutcome="";mode="final";render();manageBgMusic()}
 const finalComplete=()=>letters(finalP.text).every(i=>used.has(base([...finalP.text][i])));
 function pick(L){
   if(done||used.has(L))return;used.add(L);lastPick=L;
   const hit=[...finalP.text].some(c=>isL(c)&&base(c)===L);
   if(finalComplete()){finalWin();return}
+  if(!hit&&missCount()>=maxErr){finalLose();return}
   hit?playPing():playBuzzer();paintFinal()}
-function finalWin(){done=solved=true;manageBgMusic();paintFinal();playWinSound()}
+const missCount=()=>[...used].filter(L=>!hitSet(L)).length;
+function finalLose(){done=true;finalOutcome="lost";bgMusic.pause();paintFinal();playBuzzer();setTimeout(playBuzzer,300)}
+function finalWin(){done=solved=true;finalOutcome="won";manageBgMusic();paintFinal();playWinSound()}
 function paintFinal(){
-  const hits=[...used].filter(L=>[...finalP.text].some(c=>isL(c)&&base(c)===L)).length;
-  document.getElementById("bd").innerHTML=finalBoard(done,solved);
-  document.getElementById("st").textContent=solved?`🏆 ${teams[finalist]} venceu o Desafio!`:done?"Solução revelada":`Letras pedidas: ${used.size} · Certas: ${hits} · Falhadas: ${used.size-hits}`;
+  const miss=missCount(),hits=used.size-miss,lost=finalOutcome==="lost",revealed=finalOutcome==="revealed";
+  document.getElementById("bd").innerHTML=finalBoard(done,solved,lost||revealed);
+  document.getElementById("st").textContent=solved?`🏆 ${teams[finalist]} venceu o Desafio!`:lost?"😬 O dentista ficou completo! A frase era esta (letras que faltavam a vermelho)":revealed?"Solução revelada":`Letras certas: ${hits} · Erros: ${miss}/${maxErr}`;
+  const parts=miss>=maxErr?8:Math.min(7,Math.ceil(miss*8/maxErr));
+  document.querySelectorAll("#dent .pt").forEach(g=>g.classList.toggle("on",+g.dataset.n<=parts));
+  document.getElementById("dm").textContent=`Erros: ${miss}/${maxErr}`;
+  document.getElementById("dent").classList.toggle("lose",lost);
   document.querySelectorAll("#kb button").forEach(b=>{const L=b.dataset.l;b.className=used.has(L)?(hitSet(L)?"hit":"miss"):"";b.disabled=done||used.has(L)});
   document.getElementById("ok").textContent=done?"🏁 Terminar":"✔ Acertaram a frase";
   document.getElementById("rev").disabled=done}
@@ -308,21 +335,21 @@ function renderInner(){
     const set=new Set("ABCDEFGHIJKLMNOPQRSTUVWXYZ");[...finalP.text].forEach(c=>{if(isL(c))set.add(base(c))});
     kbKeys=[...set].sort((a,b)=>a.localeCompare(b));
     h+=`<div class="rl" style="--tc:${COLORS[finalist]}">🏆 GRANDE FINAL · <b>${esc(teams[finalist])}</b></div>
-    <div class="stage"><div id="bd"></div><div class="theme">${esc(finalP.theme)}</div></div><div class="stat" id="st"></div>
+    <div class="fgrid"><div class="stage"><div id="bd"></div><div class="theme">${esc(finalP.theme)}</div></div><div class="dent" id="dent">${DENTIST}<div class="dm" id="dm"></div></div></div><div class="stat" id="st"></div>
     <div class="kb" id="kb">${kbKeys.map(L=>`<button type="button" data-l="${esc(L)}">${esc(L)}</button>`).join("")}</div>
-    <p class="mut">Cada jogador diz uma letra à vez · clica na letra (ou escreve-a no teclado) · quando a equipa souber a frase, carrega em «Acertaram»</p>
+    <p class="mut">Cada jogador diz uma letra à vez · cada erro acrescenta uma parte ao dentista · ganham se descobrirem a frase antes de atingirem o limite de erros (${maxErr})</p>
     <div class="row"><button class="g" id="ok">✔ Acertaram a frase</button><button class="s" id="rev">👁 Revelar solução</button><button class="s" id="sn">${sl()}</button><button class="s" id="ed">✎ Editar</button></div>`;
     app.innerHTML=h;paintFinal();
     document.querySelectorAll("#kb button").forEach(b=>b.onclick=()=>pick(b.dataset.l));
     const g=id=>document.getElementById(id);
     g("ok").onclick=()=>{if(done){mode="end";manageBgMusic();stopApplause();render()}else finalWin()};
-    g("rev").onclick=()=>{if(done)return;done=true;manageBgMusic();paintFinal()};
+    g("rev").onclick=()=>{if(done)return;done=true;finalOutcome="revealed";manageBgMusic();paintFinal()};
     g("sn").onclick=()=>{snd=(snd+1)%3;playPing();manageBgMusic();g("sn").textContent=sl()};
     g("ed").onclick=()=>{mode="edit";manageBgMusic();render()};return}
   if(mode==="end"){
     manageBgMusic();
     const rank=teams.map((t,i)=>i).sort((a,b)=>scores[b]-scores[a]);
-    app.innerHTML=h+`${teamsHTML([finalist],"🏆 Finalista",false)}<div class="card" style="text-align:center"><p class="big">🎉 Obrigado por jogarem!</p><p class="mut">Classificação: ${rank.map((i,k)=>`${k+1}.º ${esc(teams[i])} (${scores[i]})`).join(" · ")}</p><div class="row"><button id="again">Jogar outra vez</button><button class="s" id="ed">Editar</button></div></div>`;
+    app.innerHTML=h+`${teamsHTML([finalist],"🏆 Finalista",false)}<div class="card" style="text-align:center"><p class="big">${finalOutcome==="won"?"🏆 "+esc(teams[finalist])+" venceu o Desafio BNI!":finalOutcome==="lost"?"😬 O dentista ficou completo desta vez!":"🎉 Fim do jogo!"}</p><p class="big">Obrigado por jogarem!</p><p class="mut">Classificação: ${rank.map((i,k)=>`${k+1}.º ${esc(teams[i])} (${scores[i]})`).join(" · ")}</p><div class="row"><button id="again">Jogar outra vez</button><button class="s" id="ed">Editar</button></div></div>`;
     document.getElementById("again").onclick=()=>{mode="cover";render()};document.getElementById("ed").onclick=()=>{mode="edit";render()};return}
 
   // ----- edição -----
@@ -336,8 +363,9 @@ function renderInner(){
     <div class="card"><b>Frases das rondas (${phrases.length})</b><p class="mut" style="text-align:left">As equipas jogam à vez, pela ordem da lista. ${split}</p><div class="pl" id="pl"></div>
     <div class="row l"><input id="th" placeholder="Tema (ex.: Instrução na Cadeira)"><input id="tx" placeholder="Frase"></div>
     <div class="row l"><button id="add">${editIdx>=0?"Guardar alteração":"Adicionar"}</button>${editIdx>=0?'<button class="s" id="cx">Cancelar</button>':""}<button class="s" id="ex">Repor frases de exemplo</button></div></div>
-    <div class="card"><b>🏆 Frase da Grande Final</b><p class="mut" style="text-align:left">Jogada como o jogo da forca: aparece toda escondida e a equipa vencedora vai escolhendo letras.</p>
-    <div class="row l"><input id="ft" placeholder="Tema da final" maxlength="80"><input id="fx" placeholder="Frase final" maxlength="200"></div></div>
+    <div class="card"><b>🏆 Frase da Grande Final</b><p class="mut" style="text-align:left">Jogada como o jogo da forca: aparece toda escondida e a equipa vai escolhendo letras. Cada erro acrescenta uma parte ao dentista e, ao chegar ao limite de erros, perdem.</p>
+    <div class="row l"><input id="ft" placeholder="Tema da final" maxlength="80"><input id="fx" placeholder="Frase final" maxlength="200"></div>
+    <div class="row l"><label for="me">Erros permitidos antes de o dentista ficar completo</label><input id="me" type="number" min="3" max="15" value="${maxErr}" style="max-width:90px"></div></div>
     <div class="card"><b>Guardar e carregar a lista</b>
     <p class="mut" style="text-align:left">Uma frase por linha, no formato <code>Tema | Frase</code>. A frase da final começa por <code>FINAL:</code>.</p>
     <textarea id="bk" rows="6" spellcheck="false"></textarea>
@@ -378,6 +406,7 @@ function renderInner(){
   // final
   g("ft").value=finalP.theme;g("fx").value=finalP.text;
   const upF=()=>{finalP={theme:g("ft").value.trim()||"Grande Final",text:g("fx").value.trim()};g("go").disabled=!phrases.length||!finalP.text;save()};
+  g("me").oninput=e=>{maxErr=Math.min(15,Math.max(3,Math.floor(+e.target.value)||8));save()};
   g("ft").oninput=upF;g("fx").oninput=upF;
   g("sp").onchange=e=>{speed=+e.target.value;save()};
   g("tt").value=title;
